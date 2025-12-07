@@ -70,3 +70,27 @@ class YangdwMindConfig(PretrainedConfig):
             if self.inference_rope_scaling
             else None
         )
+
+
+import torch
+import torch.nn as nn
+
+
+# 继承nn.Module类
+class RMSNorm(nn.Module):
+    # __init__初始化
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    # _norm
+    def _norm(self, x):
+        return torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    # forward
+    # x.float() :将输入 x 转为 float32,避免在 float16 或 bfloat16 下计算 mean / sqrt 时出现数值下溢（underflow）或精度问题
+    # .type_as(x): 将归一化结果转回原始输入的数据类型（如 x 是 torch.float16，就转回 float16）,保持模型整体精度一致
+    def forward(self, x):
+        return self.weight * self._norm(x.float()).type_as(x)
