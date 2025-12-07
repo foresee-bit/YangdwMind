@@ -1,8 +1,9 @@
 from transformers import PretrainedConfig
 
 
-class MokioMindConfig(PretrainedConfig):
-    model_type = "mokiomind"
+# huggingface中的类，用于存储模型配置参数
+class YangdwMindConfig(PretrainedConfig):
+    model_type = "yangdwmind"
 
     def __init__(
         self,
