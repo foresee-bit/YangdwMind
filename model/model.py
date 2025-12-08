@@ -1,4 +1,6 @@
 from transformers import PretrainedConfig
+import torch
+import torch.nn as nn
 
 
 # huggingface中的类，用于存储模型配置参数
@@ -70,10 +72,6 @@ class YangdwMindConfig(PretrainedConfig):
             if self.inference_rope_scaling
             else None
         )
-
-
-import torch
-import torch.nn as nn
 
 
 # 继承nn.Module类
