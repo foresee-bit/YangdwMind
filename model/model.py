@@ -1,6 +1,8 @@
 from transformers import PretrainedConfig
 import torch
 import torch.nn as nn
+from typing import Optional
+import math
 
 
 # huggingface中的类，用于存储模型配置参数
@@ -92,3 +94,58 @@ class RMSNorm(nn.Module):
     # .type_as(x): 将归一化结果转回原始输入的数据类型（如 x 是 torch.float16，就转回 float16）,保持模型整体精度一致
     def forward(self, x):
         return self.weight * self._norm(x.float()).type_as(x)
+
+
+# RoPE
+def precompute_freqs_cis(
+    dim: int,
+    end: int = int(32 * 1024),
+    rope_base: float = 1e6,
+    rope_scaling: Optional[dict] = None,
+):
+    """
+    Compute the cos and sin frequency tables for RoPE.
+
+    Args:
+        dim (int): Dimension of the model.
+        end (int): Maximum sequence length.
+        rope_base (float): Base frequency for RoPE.
+        rope_scaling 这个参数可以是 dict 类型，也可以是 None，默认值就是 None
+    """
+    # 写出最初的RoPE式子
+    freqs = 1.0 / (rope_base ** (torch.arange(0, dim, 2)[: dim // 2].float() / dim))
+    if rope_scaling is not None:
+        orig_max, factor, beta_fast, beta_slow = (
+            rope_scaling.get("original_max_position_embeddings", 2048),
+            rope_scaling.get("factor", 1),
+            rope_scaling.get("beta_fast", 1),
+            rope_scaling.get("beta_slow", 1),
+        )
+        # 计算 corr_dim,在 RoPE 的频率分量中，找到第一个其旋转周期超过原始最大上下文长度 orig_max 的维度索引 corr_dim。如果没有找到，则设为 dim // 2（即所有维度都不满足，全部需要处理）
+        corr_dim = next(
+            (i for i in range(2, dim // 2) if 2 * math.pi / freqs[i] > orig_max),
+            dim // 2,
+        )
+        # 计算power
+        power = torch.arange(0, dim // 2, device=freqs.device).float() / (
+            max(dim // 2 - 1, 1)
+        )
+        # 计算beta
+        beta = beta_slow + (beta_fast - beta_slow) * power
+
+        # 计算scale
+        scale = torch.where(
+            torch.arange(dim // 2, device=freqs.device) < corr_dim,
+            (beta * factor - beta + 1) / (beta * factor),
+            1.0 / factor,
+        )
+        # 应用scale
+        freqs = freqs * scale
+    # 生成位置索引,与频率相乘
+    t = torch.arange(end, device=freqs.device)
+    freqs = torch.outer(t, freqs).float()  # [end, dim // 2]
+
+    # 返回一个cos和sin
+    freqs_cos = torch.cat([torch.cos(freqs), torch.cos(freqs)], dim=-1)
+    freqs_sin = torch.cat([torch.sin(freqs), torch.sin(freqs)], dim=-1)
+    return freqs_cos, freqs_sin
